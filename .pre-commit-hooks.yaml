@@ -1,0 +1,17 @@
+# kaszanas-lint indexes the whole project on every run (cached), so one serial invocation that
+# receives all changed files is faster than pre-commit's default parallel batches.
+- id: kaszanas-lint
+  name: kaszanas-lint (keyword arguments)
+  description: Report positional arguments in calls to project-defined callables (KWA001/KWA002).
+  entry: kaszanas-lint check
+  language: python
+  types_or: [python, pyi]
+  require_serial: true
+
+- id: kaszanas-lint-fix
+  name: kaszanas-lint --fix (keyword arguments)
+  description: Rewrite calls to project-defined callables to use keyword arguments.
+  entry: kaszanas-lint check --fix
+  language: python
+  types_or: [python, pyi]
+  require_serial: true

@@ -1,0 +1,13 @@
+{
+  "name": "kaszanas-python",
+  "version": "0.1.0",
+  "description": "Python house rules for Claude Code: keyword arguments at call sites of project-defined callables. Ships the python-keyword-arguments skill and a PostToolUse hook that runs kaszanas-lint on every edited .py file.",
+  "author": {
+    "name": "Andrzej Białecki (Kaszanas)",
+    "url": "https://github.com/Kaszanas"
+  },
+  "homepage": "https://github.com/Kaszanas/kaszanas_agents",
+  "repository": "https://github.com/Kaszanas/kaszanas_agents",
+  "license": "AGPL-3.0-or-later",
+  "keywords": ["python", "lint", "keyword-arguments", "code-style"]
+}

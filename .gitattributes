@@ -1,0 +1,3 @@
+# Keep LF everywhere: generated agent files are compared byte-for-byte with their sources,
+# and the CRLF handling of kaszanas-lint is tested explicitly in tests/.
+* text=auto eol=lf

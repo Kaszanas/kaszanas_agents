@@ -1,0 +1,17 @@
+{
+  "description": "Run kaszanas-lint on Python files right after Claude edits them; findings are fed back to Claude.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --no-project --quiet --script \"${CLAUDE_PLUGIN_ROOT}/hooks/check_edited_python_file.py\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

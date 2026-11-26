@@ -1,0 +1,168 @@
+"""Load `[tool.kaszanas-lint]` from pyproject.toml and merge command-line overrides."""
+
+from __future__ import annotations
+
+import sys
+from dataclasses import dataclass, replace
+from pathlib import Path
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover
+    import tomli as tomllib
+
+ALL_RULE_CODES = ("KWA001", "KWA002")
+
+DEFAULT_EXCLUDED_DIRECTORY_NAMES = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        ".venv",
+        "venv",
+        ".env",
+        "env",
+        "__pycache__",
+        "build",
+        "dist",
+        "node_modules",
+        ".tox",
+        ".nox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".kaszanas_lint_cache",
+        "site-packages",
+        ".eggs",
+        "__pypackages__",
+    }
+)
+
+DEFAULT_SAFE_DECORATORS = frozenset(
+    {
+        "staticmethod",
+        "classmethod",
+        "property",
+        "abstractmethod",
+        "cache",
+        "lru_cache",
+        "cached_property",
+        "wraps",
+        "override",
+        "final",
+        "contextmanager",
+        "asynccontextmanager",
+        "deprecated",
+        "total_ordering",
+        "dataclass",
+        "unique",
+        "runtime_checkable",
+        "setter",
+        "getter",
+        "deleter",
+        "singledispatchmethod",
+    }
+)
+
+DEFAULT_IGNORED_CALL_PATTERNS = (
+    # Logging-style calls conventionally take a format string plus positional values.
+    r"(.*\.)?(debug|info|warning|warn|error|exception|critical|fatal|log)",
+    # printf-style and string helpers.
+    r"(.*\.)?(format|join|replace|startswith|endswith|split|rsplit|strip)",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class LintConfiguration:
+    project_root: Path
+    source_roots: tuple[Path, ...]
+    exclude_patterns: tuple[str, ...] = ()
+    selected_rule_codes: frozenset[str] = frozenset(ALL_RULE_CODES)
+    per_file_ignores: tuple[tuple[str, frozenset[str]], ...] = ()
+    allowed_leading_positional_arguments: int = 0
+    max_positional_arguments_for_external_calls: int = 2
+    ignored_call_patterns: tuple[str, ...] = DEFAULT_IGNORED_CALL_PATTERNS
+    safe_decorators: frozenset[str] = DEFAULT_SAFE_DECORATORS
+    inspect_standard_library: bool = True
+    cache_enabled: bool = True
+
+    def with_overrides(self, **overrides: object) -> LintConfiguration:
+        return replace(self, **{key: value for key, value in overrides.items() if value is not None})
+
+
+def find_project_root(start_directory: Path) -> Path:
+    """Nearest ancestor holding pyproject.toml, else nearest holding .git, else start."""
+    start_directory = start_directory.resolve()
+    candidates = [start_directory, *start_directory.parents]
+    for candidate in candidates:
+        if (candidate / "pyproject.toml").is_file():
+            return candidate
+    for candidate in candidates:
+        if (candidate / ".git").exists():
+            return candidate
+    return start_directory
+
+
+def _read_tool_table(pyproject_path: Path) -> dict[str, object]:
+    if not pyproject_path.is_file():
+        return {}
+    with pyproject_path.open(mode="rb") as pyproject_file:
+        document = tomllib.load(pyproject_file)
+    table = document.get("tool", {}).get("kaszanas-lint", {})
+    if not isinstance(table, dict):
+        raise ValueError(f"[tool.kaszanas-lint] in {pyproject_path} must be a table")
+    return table
+
+
+def _string_list(table: dict[str, object], key: str) -> list[str]:
+    value = table.get(key, [])
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"[tool.kaszanas-lint] `{key}` must be a list of strings")
+    return value
+
+
+def _default_source_roots(project_root: Path) -> tuple[Path, ...]:
+    source_directory = project_root / "src"
+    if source_directory.is_dir():
+        return (source_directory, project_root)
+    return (project_root,)
+
+
+def load_configuration(project_root: Path, explicit_config_path: Path | None = None) -> LintConfiguration:
+    pyproject_path = explicit_config_path or project_root / "pyproject.toml"
+    table = _read_tool_table(pyproject_path=pyproject_path)
+
+    source_roots = tuple(project_root / entry for entry in _string_list(table=table, key="src"))
+    if not source_roots:
+        source_roots = _default_source_roots(project_root=project_root)
+
+    selected = set(_string_list(table=table, key="select") or ALL_RULE_CODES)
+    selected -= set(_string_list(table=table, key="ignore"))
+
+    raw_per_file_ignores = table.get("per-file-ignores", {})
+    if not isinstance(raw_per_file_ignores, dict):
+        raise ValueError("[tool.kaszanas-lint] `per-file-ignores` must be a table")
+    per_file_ignores = tuple((pattern, frozenset(codes)) for pattern, codes in raw_per_file_ignores.items())
+
+    ignored_call_patterns = tuple(
+        _string_list(table=table, key="ignore-call-patterns") or DEFAULT_IGNORED_CALL_PATTERNS
+    ) + tuple(_string_list(table=table, key="extend-ignore-call-patterns"))
+
+    safe_decorators = frozenset(
+        _string_list(table=table, key="safe-decorators") or DEFAULT_SAFE_DECORATORS
+    ) | frozenset(_string_list(table=table, key="extend-safe-decorators"))
+
+    return LintConfiguration(
+        project_root=project_root,
+        source_roots=source_roots,
+        exclude_patterns=tuple(
+            _string_list(table=table, key="exclude") + _string_list(table=table, key="extend-exclude")
+        ),
+        selected_rule_codes=frozenset(selected),
+        per_file_ignores=per_file_ignores,
+        allowed_leading_positional_arguments=int(table.get("allow-positional", 0)),
+        max_positional_arguments_for_external_calls=int(table.get("max-positional-external", 2)),
+        ignored_call_patterns=ignored_call_patterns,
+        safe_decorators=safe_decorators,
+        inspect_standard_library=bool(table.get("inspect-stdlib", True)),
+    )

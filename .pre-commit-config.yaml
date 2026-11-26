@@ -1,0 +1,76 @@
+# Runs under prek (preferred: `uv run prek install`) and classic pre-commit alike.
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: [--unsafe]
+      - id: check-toml
+      - id: check-json
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 9026c9127e153371d7a78dfcb0c45ae2046a3d10  # frozen: v0.17.6
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 82912cdaea4fb830f751504486a7879c70526547  # frozen: 1.0.0
+    hooks:
+      - id: mdformat
+        # --number keeps ordered lists numbered 1., 2., 3. instead of collapsing to 1., 1., 1.
+        args: [--wrap, "88", --number]
+        additional_dependencies:
+          - mdformat-gfm # GitHub Flavored Markdown: tables, task lists, autolinks
+          - mdformat-frontmatter # YAML frontmatter in SKILL.md files
+        # Generated copies are rebuilt from skills/ by the agent-files-sync hook below;
+        # CLA.md is kept byte-identical with the other Kaszanas repositories.
+        exclude: ^(rules/|plugins/kaszanas-python/skills/|CLA\.md$)
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca  # frozen: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: fb3d172721d67324b2b85cce07abe9caa3cea492  # frozen: v4.20.1
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  # Hooks that run this checkout's own code through uv.
+  - repo: local
+    hooks:
+      - id: kaszanas-lint
+        name: kaszanas-lint (dogfood keyword-argument rule)
+        entry: uv run --frozen kaszanas-lint check --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: agent-files-sync
+        name: regenerate agent files from skills/
+        entry: uv run scripts/build_agent_files.py
+        language: system
+        files: ^(skills/|scripts/build_agent_files\.py$)
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest
+        entry: uv run --frozen pytest
+        language: system
+        pass_filenames: false
+        always_run: true
+
+exclude: |
+  (?x)(
+      ^LICENSE$|
+      ^signatures/|
+      ^\.kaszanas_lint_cache/
+  )
