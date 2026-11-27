@@ -54,6 +54,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
     check_parser.add_argument(
         "--min-match-branches", type=int, default=None, metavar="N", help="MAT001/MAT002 chain length"
     )
+    check_parser.add_argument(
+        "--max-blank-lines-after-heading",
+        type=int,
+        default=None,
+        metavar="N",
+        help="blank lines the CMT001 fix keeps below a `# Title:` heading",
+    )
     check_parser.add_argument("--config", type=Path, default=None, help="explicit pyproject.toml")
     check_parser.add_argument("--no-cache", action="store_true")
     check_parser.add_argument("--jobs", type=int, default=None, help="worker processes")
@@ -103,6 +110,7 @@ def run_check(parsed: argparse.Namespace) -> int:
         allowed_leading_positional_arguments=parsed.allow_positional,
         max_positional_arguments_for_external_calls=parsed.max_positional_external,
         minimum_match_branches=parsed.min_match_branches,
+        max_blank_lines_after_heading=parsed.max_blank_lines_after_heading,
         cache_enabled=False if parsed.no_cache else None,
     )
 

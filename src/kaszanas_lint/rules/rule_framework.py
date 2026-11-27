@@ -31,10 +31,21 @@ class RuleContext:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceLocation:
+    """A reported range for findings that have no AST node (comments). Columns are UTF-8 byte
+    offsets, exactly like `ast` positions, so reporting converts them the same way."""
+
+    lineno: int
+    col_offset: int
+    end_lineno: int
+    end_col_offset: int
+
+
+@dataclass(frozen=True, slots=True)
 class RuleFinding:
     """One violation. `node` provides the reported range; all `fix_plans` apply together or not at all."""
 
     code: str
-    node: ast.AST
+    node: ast.AST | SourceLocation
     message: str
     fix_plans: tuple[FixPlan, ...] = ()

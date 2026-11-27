@@ -131,7 +131,7 @@ class KeywordArgumentChecker(ast.NodeVisitor):
         self.class_name_stack: list[str | None] = []
         self.findings: list[RuleFinding] = []
 
-    # ------------------------------------------------------------------ scopes
+    # Scopes:
 
     def _current_class_symbol(self, class_name: str) -> ClassSymbol | None:
         if any(scope.kind not in ("module", "class") for scope in self.scopes):
@@ -291,7 +291,7 @@ class KeywordArgumentChecker(ast.NodeVisitor):
     visit_GeneratorExp = _visit_comprehension
     visit_DictComp = _visit_comprehension
 
-    # ------------------------------------------------------------------ name resolution
+    # Name resolution:
 
     def resolve_name(self, name: str) -> NameReference:
         innermost_index = len(self.scopes) - 1
@@ -384,7 +384,7 @@ class KeywordArgumentChecker(ast.NodeVisitor):
             reference, access_mode = self._member(reference=reference, attribute_name=attribute_name)
         return reference, access_mode
 
-    # ------------------------------------------------------------------ calls
+    # Calls:
 
     def visit_Call(self, node: ast.Call) -> None:
         self.generic_visit(node)

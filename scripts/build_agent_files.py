@@ -41,9 +41,12 @@ class Skill:
     description: str
     body: str
     directory: Path
+    globs: str | None = None  # optional `globs:` frontmatter, comma-separated
 
     @property
     def file_glob(self) -> str:
+        if self.globs:
+            return self.globs
         for prefix, glob in FILE_GLOBS_BY_SKILL_PREFIX.items():
             if self.name.startswith(prefix):
                 return glob
@@ -74,6 +77,7 @@ def parse_skill(skill_file: Path) -> Skill:
         description=front_matter["description"].strip(),
         body=match.group("body").strip() + "\n",
         directory=skill_file.parent,
+        globs=front_matter["globs"].strip().strip('"') if "globs" in front_matter else None,
     )
 
 

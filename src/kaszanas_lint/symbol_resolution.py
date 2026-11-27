@@ -76,7 +76,7 @@ class SymbolResolver:
         for nested_class in class_symbol.nested_classes.values():
             self._register_class(class_symbol=nested_class)
 
-    # ----------------------------------------------------------------- dotted names
+    # Dotted names:
 
     def resolve_dotted_name(self, dotted_name: str, depth: int = 0) -> ResolvedSymbol:
         if dotted_name in self._dotted_cache:
@@ -165,7 +165,7 @@ class SymbolResolver:
             current = self.member_of(container=current, attribute_name=attribute_name)
         return current
 
-    # ----------------------------------------------------------------- classes
+    # Classes:
 
     def linearize(self, class_symbol: ClassSymbol) -> tuple[MethodResolutionEntry, ...]:
         cache_key = class_symbol.qualified_name
