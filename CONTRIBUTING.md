@@ -122,7 +122,10 @@ fails when they're stale.
    - `rules/keyword_arguments` (KWA) resolves every call to a project definition,
      through imports, `self`/`cls`/`super()`, the C3 MRO and constructors, or to
      external code;
-   - `rules/match_statements` (MAT) finds if/elif chains that test one subject.
+   - `rules/match_statements` (MAT) finds if/elif chains that test one subject;
+   - `rules/banner_comments` (CMT) works on the token stream instead of the AST, because
+     comments aren't AST nodes. Such families report a `SourceLocation` (byte columns,
+     like `ast`) in place of a node.
 
 3. **Fix**: `automatic_fixes`.
 
@@ -135,7 +138,9 @@ fails when they're stale.
 
 1. Create `skills/<name>/SKILL.md`. It needs YAML frontmatter with `name`, `description`
    (the description is what agents match against, so start it with "Use when …") and
-   `license: AGPL-3.0-or-later`.
+   `license: AGPL-3.0-or-later`. Skills named `python-*` apply to `**/*.py`, and others
+   to every file. To narrow that, add a quoted, comma-separated `globs:` value, which
+   becomes the Cursor `globs` and the Copilot `applyTo`.
 
 2. Put longer material in `skills/<name>/references/` and link it from the skill.
 

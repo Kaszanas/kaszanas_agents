@@ -5,10 +5,10 @@ from __future__ import annotations
 import ast
 from importlib import resources
 
-from kaszanas_lint.rules import keyword_arguments, match_statements
+from kaszanas_lint.rules import banner_comments, keyword_arguments, match_statements
 from kaszanas_lint.rules.rule_framework import RuleContext, RuleFinding
 
-RULE_FAMILIES = (keyword_arguments, match_statements)
+RULE_FAMILIES = (keyword_arguments, match_statements, banner_comments)
 
 RULE_DESCRIPTIONS: dict[str, str] = {
     code: description for family in RULE_FAMILIES for code, description in family.RULE_DESCRIPTIONS.items()

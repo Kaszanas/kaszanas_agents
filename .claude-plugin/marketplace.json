@@ -11,7 +11,7 @@
     {
       "name": "kaszanas-python",
       "source": "./plugins/kaszanas-python",
-      "description": "Python house rules: keyword arguments at call sites and match statements for dispatch, enforced by the kaszanas-lint checker after every edit.",
+      "description": "House rules: keyword arguments at call sites, match statements for dispatch, and plain section comments instead of banners, enforced by the kaszanas-lint checker after every edit.",
       "category": "development"
     }
   ]

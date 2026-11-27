@@ -88,3 +88,17 @@ def test_hook_script_reports_findings_with_exit_code_two(make_project):
         check=False,
     )
     assert completed.returncode == 0
+
+
+def test_skill_globs_frontmatter_overrides_the_prefix_default():
+    build_agent_files = load_build_script()
+    skills = {skill.name: skill for skill in build_agent_files.load_skills()}
+    assert skills["python-keyword-arguments"].file_glob == "**/*.py"
+    section_comments_glob = skills["source-section-comments"].file_glob
+    assert '"' not in section_comments_glob
+    assert "**/*.py" in section_comments_glob.split(",")
+    assert "**/*.ts" in section_comments_glob.split(",")
+    assert not any(
+        "Makefile" in glob or glob.endswith((".mk", ".yaml", ".toml"))
+        for glob in section_comments_glob.split(",")
+    )

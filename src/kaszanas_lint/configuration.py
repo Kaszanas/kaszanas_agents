@@ -13,7 +13,7 @@ else:  # pragma: no cover
     import tomli as tomllib
 
 # Kept in sync with the rule registry by tests/test_rule_documentation.py.
-ALL_RULE_CODES = ("KWA001", "KWA002", "MAT001", "MAT002")
+ALL_RULE_CODES = ("KWA001", "KWA002", "MAT001", "MAT002", "CMT001", "CMT002")
 DEFAULT_MINIMUM_MATCH_BRANCHES = 3
 
 DEFAULT_EXCLUDED_DIRECTORY_NAMES = frozenset(

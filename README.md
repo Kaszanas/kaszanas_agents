@@ -45,14 +45,23 @@ match command:  # after `kaszanas-lint check --fix`
         ...
 ```
 
+**3. In source code (any language), write section headings as one plain comment, never
+as ASCII-art banners or divider lines.** Makefiles, shell and config files are exempt.
+
+```python
+# ------------------------------------------------------------------ helpers  (before)
+# Helpers:                                                       (after `--fix`)
+```
+
 ## What's inside
 
 | Component                                                                    | What it does                                                                                                           |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | [`python-keyword-arguments`](skills/python-keyword-arguments/SKILL.md) skill | Teaches agents the keyword-argument rule, its exceptions, and how to verify with the checker                           |
 | [`python-match-statements`](skills/python-match-statements/SKILL.md) skill   | Teaches when `match` helps, when a dict is better, and the capture-pattern pitfall                                     |
+| [`source-section-comments`](skills/source-section-comments/SKILL.md) skill   | Any language: plain `# Title:` section comments instead of banners; scoped to source files only                        |
 | `kaszanas-lint`                                                              | Indexes your whole project, reports [the rules below](#rules), and rewrites what it can prove safe (`--fix`)           |
-| Claude Code plugin `kaszanas-python`                                         | Both skills, plus a hook that lints each `.py` file right after Claude edits it and feeds findings back                |
+| Claude Code plugin `kaszanas-python`                                         | All skills, plus a hook that lints each `.py` file right after Claude edits it and feeds findings back                 |
 | [`rules/`](rules/)                                                           | The same rules as Cursor `.mdc`, Copilot `.instructions.md` and `AGENTS.md` sections, for agents without skill support |
 | pre-commit / prek hooks                                                      | `kaszanas-lint` and `kaszanas-lint-fix`, for any repository                                                            |
 
@@ -170,6 +179,8 @@ configuration. Read them here, or offline with `kaszanas-lint rule <CODE>`.
 | [KWA002](src/kaszanas_lint/rule_documentation/KWA002.md) | keyword arguments | More than `max-positional-external` (2) positional arguments in a call to external code   | No (names the keywords) |
 | [MAT001](src/kaszanas_lint/rule_documentation/MAT001.md) | match statements  | An if/elif chain of 3+ branches testing one subject (Python 3.10+)                        | When provably equal     |
 | [MAT002](src/kaszanas_lint/rule_documentation/MAT002.md) | match statements  | An if/elif chain that maps literal values to constants: use a dict lookup                 | No                      |
+| [CMT001](src/kaszanas_lint/rule_documentation/CMT001.md) | section comments  | A decorative banner around a section title, such as `# ---- helpers ----`                 | Yes (`# Helpers:`)      |
+| [CMT002](src/kaszanas_lint/rule_documentation/CMT002.md) | section comments  | A bare divider comment line, such as `# ----------`                                       | Yes (deletes it)        |
 
 ```text
 app.py:12:5: KWA001 [*] Call to `shop.orders.create_order` passes 2 argument(s) positionally; use keywords: customer=, items=
