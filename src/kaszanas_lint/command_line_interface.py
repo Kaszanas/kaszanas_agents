@@ -18,10 +18,10 @@ from kaszanas_lint.diagnostic_reporting import (
     format_text,
 )
 from kaszanas_lint.linting_session import run_lint
-from kaszanas_lint.rules.keyword_arguments import RULE_DESCRIPTIONS
+from kaszanas_lint.rules.rule_registry import RULE_DESCRIPTIONS, RULE_DOCUMENTATION_URL, rule_documentation
 from kaszanas_lint.source_text import write_python_source
 
-SUBCOMMANDS = ("check", "rules")
+SUBCOMMANDS = ("check", "rules", "rule")
 
 
 def _comma_separated_codes(raw_value: str) -> frozenset[str]:
@@ -35,7 +35,7 @@ def _comma_separated_codes(raw_value: str) -> frozenset[str]:
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kaszanas-lint",
-        description="Opinionated Python lint rules (keyword arguments at call sites) with autofix.",
+        description="Opinionated Python lint rules (keyword arguments, match statements) with autofix.",
     )
     parser.add_argument("--version", action="version", version=f"kaszanas-lint {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -51,6 +51,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("--ignore", type=_comma_separated_codes, default=None)
     check_parser.add_argument("--allow-positional", type=int, default=None, metavar="N")
     check_parser.add_argument("--max-positional-external", type=int, default=None, metavar="N")
+    check_parser.add_argument(
+        "--min-match-branches", type=int, default=None, metavar="N", help="MAT001/MAT002 chain length"
+    )
     check_parser.add_argument("--config", type=Path, default=None, help="explicit pyproject.toml")
     check_parser.add_argument("--no-cache", action="store_true")
     check_parser.add_argument("--jobs", type=int, default=None, help="worker processes")
@@ -58,7 +61,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("--quiet", action="store_true", help="only print diagnostics")
     check_parser.add_argument("--statistics", action="store_true", help="print timings")
 
-    subparsers.add_parser("rules", help="describe the available rules")
+    subparsers.add_parser("rules", help="list the available rules")
+    rule_parser = subparsers.add_parser("rule", help="show the documentation page of one rule")
+    rule_parser.add_argument("code", type=str.upper, choices=ALL_RULE_CODES, metavar="CODE")
     return parser
 
 
@@ -97,6 +102,7 @@ def run_check(parsed: argparse.Namespace) -> int:
         selected_rule_codes=frozenset(selected),
         allowed_leading_positional_arguments=parsed.allow_positional,
         max_positional_arguments_for_external_calls=parsed.max_positional_external,
+        minimum_match_branches=parsed.min_match_branches,
         cache_enabled=False if parsed.no_cache else None,
     )
 
@@ -134,22 +140,23 @@ def run_check(parsed: argparse.Namespace) -> int:
             )
 
     remaining = run_result.diagnostics
-    if parsed.output_format == "json":
-        print(format_json(diagnostics=remaining, project_root=project_root))
-    elif parsed.output_format == "github":
-        rendered = format_github(
-            diagnostics=remaining, project_root=project_root, working_directory=working_directory
-        )
-        if rendered:
-            print(rendered)
-    else:
-        rendered = format_text(
-            diagnostics=remaining, project_root=project_root, working_directory=working_directory
-        )
-        if rendered:
-            print(rendered)
-        if not parsed.quiet:
-            print(format_summary(remaining=remaining, fixed_count=fixed_count, would_fix=parsed.diff))
+    match parsed.output_format:
+        case "json":
+            print(format_json(diagnostics=remaining, project_root=project_root))
+        case "github":
+            rendered = format_github(
+                diagnostics=remaining, project_root=project_root, working_directory=working_directory
+            )
+            if rendered:
+                print(rendered)
+        case _:
+            rendered = format_text(
+                diagnostics=remaining, project_root=project_root, working_directory=working_directory
+            )
+            if rendered:
+                print(rendered)
+            if not parsed.quiet:
+                print(format_summary(remaining=remaining, fixed_count=fixed_count, would_fix=parsed.diff))
 
     for error in run_result.errors:
         print(f"kaszanas-lint: skipped {error}", file=sys.stderr)
@@ -170,6 +177,14 @@ def run_check(parsed: argparse.Namespace) -> int:
 def run_rules() -> int:
     for code, description in RULE_DESCRIPTIONS.items():
         print(f"{code}  {description}")
+    print(
+        "\nDetails: kaszanas-lint rule <CODE>  (online: " + RULE_DOCUMENTATION_URL.format(code="<CODE>") + ")"
+    )
+    return 0
+
+
+def run_rule(code: str) -> int:
+    print(rule_documentation(code=code))
     return 0
 
 
@@ -180,6 +195,8 @@ def main(arguments: list[str] | None = None) -> int:
     parsed = parser.parse_args(_normalize_arguments(arguments=raw_arguments))
     if parsed.command == "rules":
         return run_rules()
+    if parsed.command == "rule":
+        return run_rule(code=parsed.code)
     return run_check(parsed=parsed)
 
 

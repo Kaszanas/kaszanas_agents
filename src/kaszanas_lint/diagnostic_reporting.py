@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 from kaszanas_lint.diagnostics import Diagnostic
+from kaszanas_lint.rules.rule_registry import RULE_DOCUMENTATION_URL
 
 
 def display_path(relative_path: str, project_root: Path, working_directory: Path) -> str:
@@ -43,6 +44,7 @@ def format_json(diagnostics: list[Diagnostic], project_root: Path) -> str:
                 "location": {"row": diagnostic.line, "column": diagnostic.column},
                 "end_location": {"row": diagnostic.end_line, "column": diagnostic.end_column},
                 "fixable": diagnostic.is_fixable,
+                "url": RULE_DOCUMENTATION_URL.format(code=diagnostic.code),
             }
             for diagnostic in diagnostics
         ],
