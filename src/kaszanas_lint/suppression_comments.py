@@ -17,7 +17,7 @@ def is_suppressed_by_noqa_comment(line_text: str, code: str) -> bool:
     for match in NOQA_COMMENT_PATTERN.finditer(line_text):
         listed_codes = match.group("codes")
         if listed_codes is None:
-            return True  # blanket `# noqa`
+            return True  # a blanket noqa comment without codes
         if code.upper() in {item.upper() for item in re.split(r"[\s,]+", listed_codes) if item}:
             return True
     return False

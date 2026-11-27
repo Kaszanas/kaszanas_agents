@@ -23,6 +23,7 @@ from kaszanas_lint.module_summarization import (
     resolve_relative_module,
     stored_names_in_same_scope,
 )
+from kaszanas_lint.rules.rule_framework import RuleContext, RuleFinding
 from kaszanas_lint.symbol_resolution import (
     AccessMode,
     ExternalSymbol,
@@ -72,14 +73,6 @@ class LexicalScope:
     instance_parameter_name: str | None = None
     instance_reference: InstanceReference | None = None
     class_symbol: ClassSymbol | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class CallFinding:
-    code: str
-    call: ast.Call
-    message: str
-    insertion_plans: tuple[KeywordInsertionPlan, ...]
 
 
 def _names_bound_in_function(
@@ -136,7 +129,7 @@ class KeywordArgumentChecker(ast.NodeVisitor):
         self.ignored_call_regexes = [re.compile(pattern) for pattern in configuration.ignored_call_patterns]
         self.scopes: list[LexicalScope] = [LexicalScope(kind="module")]
         self.class_name_stack: list[str | None] = []
-        self.findings: list[CallFinding] = []
+        self.findings: list[RuleFinding] = []
 
     # ------------------------------------------------------------------ scopes
 
@@ -355,34 +348,34 @@ class KeywordArgumentChecker(ast.NodeVisitor):
         attribute_names.reverse()
 
         reference: NameReference
-        if isinstance(base, ast.Name):
-            reference = self.resolve_name(name=base.id)
-        elif (
-            isinstance(base, ast.Call)
-            and isinstance(base.func, ast.Name)
-            and base.func.id == "super"
-            and not base.args
-            and isinstance(self.resolve_name(name="super"), ExternalSymbol)
-        ):
-            method_reference = self._enclosing_method_reference()
-            if method_reference is None:
-                return UNRESOLVED, "direct"
-            reference = InstanceReference(
-                class_symbol=method_reference.class_symbol,
-                mode=method_reference.mode,
-                skip_own_class=True,
-            )
-        elif isinstance(base, ast.Call):
-            # `ProjectClass(...).method()`: a known constructor yields an instance of that class.
-            constructed, _ = self.resolve_callee(callee=base.func)
-            if (
-                not isinstance(constructed, ClassSymbol)
-                or self.resolver.constructor_signature(class_symbol=constructed) is None
+        match base:
+            case ast.Name():
+                reference = self.resolve_name(name=base.id)
+            case ast.Call() if (
+                isinstance(base.func, ast.Name)
+                and base.func.id == "super"
+                and not base.args
+                and isinstance(self.resolve_name(name="super"), ExternalSymbol)
             ):
+                method_reference = self._enclosing_method_reference()
+                if method_reference is None:
+                    return UNRESOLVED, "direct"
+                reference = InstanceReference(
+                    class_symbol=method_reference.class_symbol,
+                    mode=method_reference.mode,
+                    skip_own_class=True,
+                )
+            case ast.Call():
+                # `ProjectClass(...).method()`: a known constructor yields an instance of that class.
+                constructed, _ = self.resolve_callee(callee=base.func)
+                if (
+                    not isinstance(constructed, ClassSymbol)
+                    or self.resolver.constructor_signature(class_symbol=constructed) is None
+                ):
+                    return UNRESOLVED, "direct"
+                reference = InstanceReference(class_symbol=constructed, mode="instance")
+            case _:
                 return UNRESOLVED, "direct"
-            reference = InstanceReference(class_symbol=constructed, mode="instance")
-        else:
-            return UNRESOLVED, "direct"
 
         access_mode: AccessMode = "direct"
         for index, attribute_name in enumerate(attribute_names):
@@ -437,14 +430,14 @@ class KeywordArgumentChecker(ast.NodeVisitor):
             return
         suggestion = ", ".join(f"{plan.keyword_name}=" for plan in plans)
         self.findings.append(
-            CallFinding(
+            RuleFinding(
                 code=PROJECT_CALL_CODE,
-                call=call,
+                node=call,
                 message=(
                     f"Call to `{function.qualified_name}` passes {len(plans)} argument(s) "
                     f"positionally; use keywords: {suggestion}"
                 ),
-                insertion_plans=tuple(plans),
+                fix_plans=tuple(plans),
             )
         )
 
@@ -482,26 +475,22 @@ class KeywordArgumentChecker(ast.NodeVisitor):
                     return  # every positional slot is positional-only
                 suggestion = "; use keywords: " + ", ".join(f"{name}=" for name in keyword_capable_names)
         self.findings.append(
-            CallFinding(
+            RuleFinding(
                 code=EXTERNAL_CALL_CODE,
-                call=call,
+                node=call,
                 message=(
                     f"Call to `{display_name}` passes {len(call.args)} positional arguments "
                     f"(max {maximum}){suggestion}"
                 ),
-                insertion_plans=(),
             )
         )
 
 
-def check_module_tree(
-    tree: ast.Module,
-    module_summary: ModuleSummary,
-    resolver: SymbolResolver,
-    configuration: LintConfiguration,
-) -> list[CallFinding]:
+def check_module_tree(tree: ast.Module, context: RuleContext) -> list[RuleFinding]:
     checker = KeywordArgumentChecker(
-        module_summary=module_summary, resolver=resolver, configuration=configuration
+        module_summary=context.module_summary,
+        resolver=context.resolver,
+        configuration=context.configuration,
     )
     checker.visit(tree)
     return checker.findings
@@ -511,7 +500,6 @@ __all__ = [
     "EXTERNAL_CALL_CODE",
     "PROJECT_CALL_CODE",
     "RULE_DESCRIPTIONS",
-    "CallFinding",
     "KeywordArgumentChecker",
     "check_module_tree",
     "is_safe_decorator",

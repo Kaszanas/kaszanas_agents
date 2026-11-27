@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -11,7 +12,9 @@ if sys.version_info >= (3, 11):
 else:  # pragma: no cover
     import tomli as tomllib
 
-ALL_RULE_CODES = ("KWA001", "KWA002")
+# Kept in sync with the rule registry by tests/test_rule_documentation.py.
+ALL_RULE_CODES = ("KWA001", "KWA002", "MAT001", "MAT002")
+DEFAULT_MINIMUM_MATCH_BRANCHES = 3
 
 DEFAULT_EXCLUDED_DIRECTORY_NAMES = frozenset(
     {
@@ -85,6 +88,9 @@ class LintConfiguration:
     safe_decorators: frozenset[str] = DEFAULT_SAFE_DECORATORS
     inspect_standard_library: bool = True
     cache_enabled: bool = True
+    minimum_match_branches: int = DEFAULT_MINIMUM_MATCH_BRANCHES
+    # Lowest Python version the project supports; None when it can't be determined.
+    target_python_version: tuple[int, int] | None = None
 
     def with_overrides(self, **overrides: object) -> LintConfiguration:
         return replace(self, **{key: value for key, value in overrides.items() if value is not None})
@@ -103,15 +109,62 @@ def find_project_root(start_directory: Path) -> Path:
     return start_directory
 
 
-def _read_tool_table(pyproject_path: Path) -> dict[str, object]:
+def _read_pyproject(pyproject_path: Path) -> dict[str, object]:
     if not pyproject_path.is_file():
         return {}
     with pyproject_path.open(mode="rb") as pyproject_file:
-        document = tomllib.load(pyproject_file)
+        return tomllib.load(pyproject_file)
+
+
+def _tool_table(document: dict[str, object], pyproject_path: Path) -> dict[str, object]:
     table = document.get("tool", {}).get("kaszanas-lint", {})
     if not isinstance(table, dict):
         raise ValueError(f"[tool.kaszanas-lint] in {pyproject_path} must be a table")
     return table
+
+
+def parse_python_version(raw_version: str) -> tuple[int, int] | None:
+    """Accept ruff-style `py310` and dotted `3.10`."""
+    compact = re.fullmatch(pattern=r"py(\d)(\d+)", string=raw_version.strip())
+    if compact:
+        return int(compact.group(1)), int(compact.group(2))
+    dotted = re.fullmatch(pattern=r"(\d+)\.(\d+)(?:\.\d+)?", string=raw_version.strip())
+    if dotted:
+        return int(dotted.group(1)), int(dotted.group(2))
+    return None
+
+
+def minimum_version_from_requires_python(specifier: str) -> tuple[int, int] | None:
+    """Lower bound of a PEP 440 specifier such as `>=3.10`, `~=3.11` or `>=3.9,<4`."""
+    for clause in specifier.split(","):
+        match = re.fullmatch(pattern=r"\s*(>=|~=|==|>)\s*(\d+)\.(\d+).*", string=clause)
+        if match:
+            operator, major, minor = match.group(1), int(match.group(2)), int(match.group(3))
+            return (major, minor + 1) if operator == ">" else (major, minor)
+    return None
+
+
+def detect_target_python_version(
+    document: dict[str, object], table: dict[str, object]
+) -> tuple[int, int] | None:
+    """`[tool.kaszanas-lint] target-version`, else `requires-python`, else ruff's target-version."""
+    explicit = table.get("target-version")
+    if isinstance(explicit, str):
+        parsed = parse_python_version(raw_version=explicit)
+        if parsed is None:
+            raise ValueError(f"[tool.kaszanas-lint] `target-version` is not a version: {explicit!r}")
+        return parsed
+    project_table = document.get("project", {})
+    requires_python = project_table.get("requires-python") if isinstance(project_table, dict) else None
+    if isinstance(requires_python, str):
+        detected = minimum_version_from_requires_python(specifier=requires_python)
+        if detected is not None:
+            return detected
+    ruff_table = document.get("tool", {}).get("ruff", {})
+    ruff_target = ruff_table.get("target-version") if isinstance(ruff_table, dict) else None
+    if isinstance(ruff_target, str):
+        return parse_python_version(raw_version=ruff_target)
+    return None
 
 
 def _string_list(table: dict[str, object], key: str) -> list[str]:
@@ -130,7 +183,8 @@ def _default_source_roots(project_root: Path) -> tuple[Path, ...]:
 
 def load_configuration(project_root: Path, explicit_config_path: Path | None = None) -> LintConfiguration:
     pyproject_path = explicit_config_path or project_root / "pyproject.toml"
-    table = _read_tool_table(pyproject_path=pyproject_path)
+    document = _read_pyproject(pyproject_path=pyproject_path)
+    table = _tool_table(document=document, pyproject_path=pyproject_path)
 
     source_roots = tuple(project_root / entry for entry in _string_list(table=table, key="src"))
     if not source_roots:
@@ -165,4 +219,6 @@ def load_configuration(project_root: Path, explicit_config_path: Path | None = N
         ignored_call_patterns=ignored_call_patterns,
         safe_decorators=safe_decorators,
         inspect_standard_library=bool(table.get("inspect-stdlib", True)),
+        minimum_match_branches=int(table.get("min-match-branches", DEFAULT_MINIMUM_MATCH_BRANCHES)),
+        target_python_version=detect_target_python_version(document=document, table=table),
     )

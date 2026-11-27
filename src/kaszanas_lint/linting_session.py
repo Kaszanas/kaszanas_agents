@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from kaszanas_lint.automatic_fixes import KeywordInsertionPlan, apply_keyword_insertions
+from kaszanas_lint.automatic_fixes import apply_fix_groups
 from kaszanas_lint.configuration import LintConfiguration
 from kaszanas_lint.diagnostics import Diagnostic
 from kaszanas_lint.file_discovery import (
@@ -17,7 +17,8 @@ from kaszanas_lint.file_discovery import (
 )
 from kaszanas_lint.parallel_execution import map_possibly_in_parallel
 from kaszanas_lint.project_index import SourceFile, build_project_index, build_source_files
-from kaszanas_lint.rules.keyword_arguments import PROJECT_CALL_CODE, check_module_tree
+from kaszanas_lint.rules.rule_framework import FixPlan, RuleContext
+from kaszanas_lint.rules.rule_registry import run_all_rules
 from kaszanas_lint.source_text import SourceText, read_python_source
 from kaszanas_lint.suppression_comments import (
     codes_ignored_for_path,
@@ -62,44 +63,58 @@ def analyze_source(
     module_summary: ModuleSummary,
     resolver: SymbolResolver,
     configuration: LintConfiguration,
-) -> tuple[list[Diagnostic], list[KeywordInsertionPlan]]:
+) -> tuple[list[Diagnostic], list[tuple[FixPlan, ...]]]:
+    """Diagnostics plus one fix group per fixable, unsuppressed finding."""
     tree = ast.parse(source, filename=relative_path)
-    findings = check_module_tree(
-        tree=tree, module_summary=module_summary, resolver=resolver, configuration=configuration
+    source_text = SourceText(text=source)
+    findings = run_all_rules(
+        tree=tree,
+        context=RuleContext(
+            module_summary=module_summary,
+            resolver=resolver,
+            configuration=configuration,
+            source_text=source_text,
+        ),
     )
     ignored_codes = codes_ignored_for_path(
         relative_posix_path=relative_path, per_file_ignores=configuration.per_file_ignores
     )
-    source_text = SourceText(text=source)
     diagnostics: list[Diagnostic] = []
-    plans: list[KeywordInsertionPlan] = []
+    fix_groups: list[tuple[FixPlan, ...]] = []
     for finding in findings:
-        call = finding.call
-        end_line = call.end_lineno or call.lineno
+        node = finding.node
         if finding.code in ignored_codes:
             continue
+        end_line = node.end_lineno or node.lineno
+        # Calls accept noqa comments on their first or last line; statements (an if/elif chain) on the
+        # line where they start, so a comment deep inside the chain can't silence it.
+        noqa_lines = {node.lineno, end_line} if isinstance(node, ast.expr) else {node.lineno}
         if any(
             is_suppressed_by_noqa_comment(line_text=source_text.lines[line_number - 1], code=finding.code)
-            for line_number in {call.lineno, end_line}
+            for line_number in noqa_lines
         ):
             continue
         diagnostics.append(
             Diagnostic(
                 relative_path=relative_path,
-                line=call.lineno,
-                column=source_text.character_column(line_number=call.lineno, byte_column=call.col_offset) + 1,
+                line=node.lineno,
+                column=source_text.character_column(line_number=node.lineno, byte_column=node.col_offset) + 1,
                 end_line=end_line,
                 end_column=source_text.character_column(
-                    line_number=end_line, byte_column=call.end_col_offset or 0
+                    line_number=end_line, byte_column=node.end_col_offset or 0
                 )
                 + 1,
                 code=finding.code,
                 message=finding.message,
-                is_fixable=bool(finding.insertion_plans),
+                is_fixable=bool(finding.fix_plans),
             )
         )
-        plans.extend(finding.insertion_plans)
-    return diagnostics, plans
+        if finding.fix_plans:
+            fix_groups.append(finding.fix_plans)
+    return diagnostics, fix_groups
+
+
+MAXIMUM_FIX_PASSES = 5
 
 
 _worker_state: dict[str, object] = {}
@@ -129,37 +144,49 @@ def check_source_file(source_file: SourceFile) -> FileCheckResult:
     if module_summary is None or module_summary.syntax_error:
         result.error = (module_summary.syntax_error if module_summary else None) or "not indexed"
         return result
-    try:
-        decoded = read_python_source(file_path=source_file.absolute_path)
-        diagnostics, plans = analyze_source(
-            source=decoded.text,
+
+    def analyze(text: str) -> tuple[list[Diagnostic], list[tuple[FixPlan, ...]]]:
+        return analyze_source(
+            source=text,
             relative_path=source_file.relative_path,
             module_summary=module_summary,
             resolver=resolver,
             configuration=configuration,
         )
+
+    try:
+        decoded = read_python_source(file_path=source_file.absolute_path)
+        diagnostics, fix_groups = analyze(text=decoded.text)
     except (OSError, SyntaxError, ValueError, UnicodeDecodeError) as analysis_error:
         result.error = str(analysis_error)
         return result
 
     result.diagnostics = diagnostics
     result.encoding = decoded.encoding
-    if apply_fixes and plans:
-        fixed_source = apply_keyword_insertions(source=decoded.text, plans=plans)
-        if fixed_source is not None and fixed_source != decoded.text:
-            remaining, _ = analyze_source(
-                source=fixed_source,
-                relative_path=source_file.relative_path,
-                module_summary=module_summary,
-                resolver=resolver,
-                configuration=configuration,
-            )
-            count_before = sum(1 for item in diagnostics if item.code == PROJECT_CALL_CODE)
-            count_after = sum(1 for item in remaining if item.code == PROJECT_CALL_CODE)
-            result.original_source = decoded.text
-            result.fixed_source = fixed_source
-            result.fixed_violation_count = max(0, count_before - count_after)
-            result.diagnostics = remaining
+    if not (apply_fixes and fix_groups):
+        return result
+
+    # Overlapping fixes (e.g. a KWA001 call inside a chain MAT001 rewrites) land on later passes.
+    current_source = decoded.text
+    fixable_before = sum(1 for item in diagnostics if item.is_fixable)
+    for _ in range(MAXIMUM_FIX_PASSES):
+        if not fix_groups:
+            break
+        fixed_source, applied_groups = apply_fix_groups(source=current_source, fix_groups=fix_groups)
+        if fixed_source is None or applied_groups == 0 or fixed_source == current_source:
+            break
+        current_source = fixed_source
+        try:
+            diagnostics, fix_groups = analyze(text=current_source)
+        except (SyntaxError, ValueError):
+            return result  # never write a file we can't re-analyse
+    if current_source != decoded.text:
+        result.original_source = decoded.text
+        result.fixed_source = current_source
+        result.fixed_violation_count = max(
+            0, fixable_before - sum(1 for item in diagnostics if item.is_fixable)
+        )
+        result.diagnostics = diagnostics
     return result
 
 
