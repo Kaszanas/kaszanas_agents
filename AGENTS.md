@@ -230,6 +230,28 @@ comment: the title, capitalized, followed by a colon.
 # Some helpers:
 ```
 
+Put the heading directly above the code it introduces, with no blank line between them.
+Separate it from the previous section with blank lines as usual. Wrong:
+
+```python
+class Report:
+    title = "Sales"
+
+    # Rendering:
+
+    def render(self): ...
+```
+
+Right:
+
+```python
+class Report:
+    title = "Sales"
+
+    # Rendering:
+    def render(self): ...
+```
+
 The same applies whatever the comment syntax is:
 
 ```typescript

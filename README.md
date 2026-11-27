@@ -208,10 +208,12 @@ All settings go in `pyproject.toml` under `[tool.kaszanas-lint]`, and all are op
 | `safe-decorators` / `extend-safe-decorators`           | `functools.wraps`, `cache`, `contextmanager`, … | Decorators known to keep the signature                         |
 | `inspect-stdlib`                                       | `true`                                          | Read builtin/stdlib signatures for KWA002                      |
 | `min-match-branches`                                   | `3`                                             | Shortest if/elif chain (counting `else`) for MAT001/MAT002     |
+| `max-blank-lines-after-heading`                        | `0`                                             | Blank lines the CMT001 fix keeps below a `# Title:` heading    |
 | `target-version`                                       | from `requires-python`, then ruff               | Lowest supported Python, e.g. `"py310"`; MAT001 needs 3.10+    |
 
 Command-line flags override the file: `--select`, `--ignore`, `--allow-positional`,
-`--max-positional-external`, `--min-match-branches`, `--no-cache` and `--config`.
+`--max-positional-external`, `--min-match-branches`, `--max-blank-lines-after-heading`,
+`--no-cache` and `--config`.
 
 ## How it works
 

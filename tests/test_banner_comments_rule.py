@@ -17,8 +17,8 @@ def check(make_project, source: str, pyproject: str = ""):
     return [(item.line, item.code, item.is_fixable) for item in result.diagnostics]
 
 
-def fix(make_project, source: str, selected_rule_codes=COMMENT_CODES) -> str:
-    project_root = make_project(files={"main.py": source})
+def fix(make_project, source: str, selected_rule_codes=COMMENT_CODES, pyproject: str = "") -> str:
+    project_root = make_project(files={"main.py": source}, pyproject=pyproject)
     result = lint_project(
         project_root=project_root, apply_fixes=True, selected_rule_codes=selected_rule_codes
     )
@@ -277,8 +277,7 @@ def test_fix_combines_with_keyword_argument_fix(make_project):
         (
             "class Frame:\n    x = 1\n\n    # ------------------------------------------\n"
             "    # Rendering Methods\n\n    def render(self):\n        return 1\n",
-            "class Frame:\n    x = 1\n\n    # Rendering Methods:\n\n"
-            "    def render(self):\n        return 1\n",
+            "class Frame:\n    x = 1\n\n    # Rendering Methods:\n    def render(self):\n        return 1\n",
         ),
         # A title underlined by a divider (CPython http.cookiejar style).
         (
@@ -315,3 +314,44 @@ def test_shebang_is_never_merged_into_a_heading(make_project):
 def test_table_header_underlines_are_not_dividers(make_project):
     source = "# Name    Value\n# ----    -----\n# a       1\nx = 1\n"
     assert check(make_project=make_project, source=source) == []
+
+
+# Spacing below the heading:
+
+
+def test_fix_attaches_the_heading_to_the_code_it_introduces(make_project):
+    source = "x = 1\n\n\n# ---- helpers ----\n\n\ndef helper():\n    return x\n"
+    assert (
+        fix(make_project=make_project, source=source)
+        == "x = 1\n\n\n# Helpers:\ndef helper():\n    return x\n"
+    )
+
+
+def test_fix_attaches_a_boxed_title_with_crlf_line_endings(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_bytes(b'[project]\nname = "x"\n')
+    source = "# ----------\r\n# helpers\r\n# ----------\r\n\r\n\r\nx = 1\r\n"
+    (tmp_path / "main.py").write_bytes(source.encode("utf-8"))
+    result = lint_project(project_root=tmp_path, apply_fixes=True, selected_rule_codes=COMMENT_CODES)
+    assert result.file_results[0].fixed_source == "# Helpers:\r\nx = 1\r\n"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # The next line is another comment: the heading stays apart from that paragraph.
+        "# ---- helpers ----\n\n# Explains f.\ndef f():\n    return 1\n",
+        # The next code is dedented: the heading is the last line of a block.
+        "class Box:\n    x = 1\n\n    # ---- helpers ----\n\ny = 2\n",
+        # Nothing follows the heading.
+        "x = 1\n# ---- helpers ----\n\n",
+    ],
+)
+def test_fix_keeps_blank_lines_when_the_heading_introduces_no_code(make_project, source):
+    fixed = fix(make_project=make_project, source=source)
+    assert "# Helpers:\n\n" in fixed
+
+
+def test_max_blank_lines_after_heading_option(make_project):
+    source = "# ---- helpers ----\n\n\nx = 1\n"
+    pyproject = "[tool.kaszanas-lint]\nmax-blank-lines-after-heading = 1\n"
+    assert fix(make_project=make_project, source=source, pyproject=pyproject) == "# Helpers:\n\nx = 1\n"

@@ -159,22 +159,45 @@ def collect_full_line_comments(source: str) -> list[FullLineComment]:
 
 @dataclass(frozen=True, slots=True)
 class BannerRewritePlan:
-    """Replace comment lines `first_line..last_line` with one `# Title:` comment (same indentation)."""
+    """Replace comment lines `first_line..last_line` with one `# Title:` comment (same indentation),
+    and delete the first `blank_lines_to_remove` blank lines after them."""
 
     first_line: int
     last_line: int
     column: int
     replacement: str
+    blank_lines_to_remove: int = 0
 
     def text_edits(self, source_text: SourceText, token_table: SignificantTokenTable) -> list[TextEdit]:
         start = source_text.offset_from_character_position(
             line_number=self.first_line, character_column=self.column
         )
-        last_line_text = source_text.lines[self.last_line - 1].rstrip("\r")
+        end_line = self.last_line + self.blank_lines_to_remove
+        end_line_text = source_text.lines[end_line - 1].rstrip("\r")
         end = source_text.offset_from_character_position(
-            line_number=self.last_line, character_column=len(last_line_text)
+            line_number=end_line, character_column=len(end_line_text)
         )
         return [TextEdit(start=start, end=end, replacement=self.replacement)]
+
+
+def removable_blank_lines_after(
+    source_text: SourceText, last_line: int, column: int, max_blank_lines: int
+) -> int:
+    """Blank lines after a heading beyond `max_blank_lines`, so the heading sits on the code it
+    introduces. Zero when the next non-blank line is another comment, is indented differently
+    (the heading closes a block) or does not exist."""
+    lines = source_text.lines
+    heading_indentation = lines[last_line - 1][:column]
+    next_index = last_line  # 0-based index of the line after the heading
+    while next_index < len(lines) and not lines[next_index].strip():
+        next_index += 1
+    if next_index >= len(lines):
+        return 0
+    next_line = lines[next_index]
+    code = next_line.lstrip()
+    if code.startswith("#") or next_line[: len(next_line) - len(code)] != heading_indentation:
+        return 0
+    return max(0, next_index - last_line - max_blank_lines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -250,9 +273,20 @@ def block_heading_title(block: list[FullLineComment]) -> str | None:
 
 
 def _banner_finding(
-    source_text: SourceText, first: FullLineComment, last: FullLineComment, title: str, kind_label: str
+    source_text: SourceText,
+    first: FullLineComment,
+    last: FullLineComment,
+    title: str,
+    kind_label: str,
+    max_blank_lines_after: int,
 ) -> RuleFinding:
     heading = heading_comment(title=title)
+    blank_lines_to_remove = removable_blank_lines_after(
+        source_text=source_text,
+        last_line=last.line_number,
+        column=first.column,
+        max_blank_lines=max_blank_lines_after,
+    )
     return RuleFinding(
         code=BANNER_COMMENT_CODE,
         node=_location(source_text=source_text, first=first, last=last),
@@ -263,6 +297,7 @@ def _banner_finding(
                 last_line=last.line_number,
                 column=first.column,
                 replacement=heading,
+                blank_lines_to_remove=blank_lines_to_remove,
             ),
         ),
     )
@@ -270,6 +305,7 @@ def _banner_finding(
 
 def check_module_tree(tree: ast.Module, context: RuleContext) -> list[RuleFinding]:
     source_text = context.source_text
+    max_blank_lines_after = context.configuration.max_blank_lines_after_heading
     findings: list[RuleFinding] = []
     for block in group_comment_blocks(comments=collect_full_line_comments(source=source_text.text)):
         block_title = block_heading_title(block=block)
@@ -281,6 +317,7 @@ def check_module_tree(tree: ast.Module, context: RuleContext) -> list[RuleFindin
                     last=block[-1],
                     title=block_title,
                     kind_label="Section title decorated with divider lines",
+                    max_blank_lines_after=max_blank_lines_after,
                 )
             )
             continue
@@ -293,6 +330,7 @@ def check_module_tree(tree: ast.Module, context: RuleContext) -> list[RuleFindin
                         last=comment,
                         title=comment.title,
                         kind_label="Decorative section banner",
+                        max_blank_lines_after=max_blank_lines_after,
                     )
                 )
             elif comment.kind is CommentKind.DIVIDER:
