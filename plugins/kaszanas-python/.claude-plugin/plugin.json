@@ -1,7 +1,7 @@
 {
   "name": "kaszanas-python",
   "version": "0.1.0",
-  "description": "Python house rules for Claude Code: keyword arguments at call sites of project-defined callables. Ships the python-keyword-arguments skill and a PostToolUse hook that runs kaszanas-lint on every edited .py file.",
+  "description": "Python house rules for Claude Code: keyword arguments at call sites of project-defined callables, and match statements (or dict lookups) for dispatch on one value. Ships the python-keyword-arguments and python-match-statements skills and a PostToolUse hook that runs kaszanas-lint on every edited .py file.",
   "author": {
     "name": "Andrzej Białecki (Kaszanas)",
     "url": "https://github.com/Kaszanas"

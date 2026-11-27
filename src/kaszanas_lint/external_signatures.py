@@ -64,17 +64,20 @@ def _signature_of(callable_object: object) -> ExternalPositionalSignature | None
     )
 
 
-@lru_cache(maxsize=8192)
-def lookup_external_signature(dotted_name: str) -> ExternalPositionalSignature | None:
+_UNRESOLVED = object()
+
+
+def resolve_external_object(dotted_name: str) -> object:
+    """The builtin or stdlib object behind a dotted name, or `_UNRESOLVED`. Never imports other code."""
     parts = dotted_name.split(".")
     if parts[0] == "builtins" and len(parts) >= 2:
         current: object = builtins
         attribute_names = parts[1:]
     else:
         if parts[0] not in STANDARD_LIBRARY_MODULE_NAMES:
-            return None
+            return _UNRESOLVED
         if parts[0] in NEVER_IMPORTED_STANDARD_LIBRARY_MODULES:
-            return None
+            return _UNRESOLVED
         current = None
         attribute_names = []
         for prefix_length in range(len(parts), 0, -1):
@@ -86,12 +89,24 @@ def lookup_external_signature(dotted_name: str) -> ExternalPositionalSignature |
             attribute_names = parts[prefix_length:]
             break
         if current is None:
-            return None
+            return _UNRESOLVED
     for attribute_name in attribute_names:
         try:
             current = getattr(current, attribute_name)
         except AttributeError:
-            return None
-    if not callable(current) or inspect.ismodule(current):
+            return _UNRESOLVED
+    return current
+
+
+@lru_cache(maxsize=8192)
+def lookup_external_signature(dotted_name: str) -> ExternalPositionalSignature | None:
+    current = resolve_external_object(dotted_name=dotted_name)
+    if current is _UNRESOLVED or not callable(current) or inspect.ismodule(current):
         return None
     return _signature_of(callable_object=current)
+
+
+@lru_cache(maxsize=4096)
+def is_standard_library_class(dotted_name: str) -> bool:
+    """True when a builtin/stdlib dotted name is a class (safe to use in a `case Name():` pattern)."""
+    return isinstance(resolve_external_object(dotted_name=dotted_name), type)

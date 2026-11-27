@@ -114,15 +114,21 @@ fails when they're stale.
    a small picklable `ModuleSummary`. The summary holds function signatures, classes
    (bases, methods, dataclass fields), imports and names that are re-bound.
 
-2. **Check pass**: `linting_session`, `rules/keyword_arguments`, `symbol_resolution`.
+2. **Check pass**: `linting_session` runs every family in `rules/rule_registry.py`.
 
-   Each requested file is walked with lexical scopes. Every call is resolved to a
-   project definition (through imports, `self`/`cls`/`super()`, the C3 MRO and
-   constructors) or to external code.
+   Each family has a `check_module_tree(tree, context)` function that returns
+   `RuleFinding`s (see `rules/rule_framework.py`):
+
+   - `rules/keyword_arguments` (KWA) resolves every call to a project definition,
+     through imports, `self`/`cls`/`super()`, the C3 MRO and constructors, or to
+     external code;
+   - `rules/match_statements` (MAT) finds if/elif chains that test one subject.
 
 3. **Fix**: `automatic_fixes`.
 
-   `name=` is inserted using token positions, and each file is re-parsed before it's
+   Each finding carries fix plans that become `TextEdit`s. Non-overlapping findings are
+   applied together. Overlapping ones, such as a KWA001 call inside a chain that MAT001
+   rewrites, land on the next of up to five passes. Each file is re-parsed before it's
    written.
 
 ## Adding a standard
@@ -139,17 +145,30 @@ fails when they're stale.
    uv run scripts/build_agent_files.py
    ```
 
-4. If the standard can be checked mechanically, add a rule module under
-   `src/kaszanas_lint/rules/` with a new code family, plus tests.
+4. If the standard can be checked mechanically, add a rule family:
+
+   - a module under `src/kaszanas_lint/rules/` exposing `RULE_DESCRIPTIONS` and
+     `check_module_tree(tree, context)`, registered in `rules/rule_registry.py`;
+   - its codes in `ALL_RULE_CODES` (`configuration.py`);
+   - one documentation page per code in
+     `src/kaszanas_lint/rule_documentation/<CODE>.md`, with the sections that
+     `tests/test_rule_documentation.py` requires;
+   - tests, including behavioural-equivalence checks for any autofix.
 
 ## Changing kaszanas-lint
 
 - **Add a test for every behaviour change.** `tests/conftest.py` provides
   `make_project`, which writes a throwaway project, and `lint_project`, which runs the
   linter on it.
-- **Stay conservative.** If a call can't be resolved with certainty, it must fall back
-  to KWA002 (report only), never to a KWA001 autofix that could rewrite the call
-  wrongly.
+- **Stay conservative.** A fix is offered only when it's provably equivalent. Uncertain
+  calls fall back to KWA002 (report only), and uncertain chains are reported as MAT001
+  without `[*]`. A wrong autofix is worse than a missed finding.
+- **Check behaviour, not just syntax.** MAT fixes are tested by running the original and
+  the rewritten code over awkward inputs (`assert_equivalent` in
+  `tests/test_match_statements_rule.py`). Large changes should also be validated on real
+  projects; see
+  [docs/benchmarks/match-statements.md](docs/benchmarks/match-statements.md) for the
+  regression procedure.
 - **Measure performance changes.** Run `kaszanas-lint check --statistics` on a large
   real project (e.g. a shallow clone of Django) and quote the before/after numbers in
   the PR.
