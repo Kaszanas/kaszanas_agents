@@ -52,7 +52,7 @@ def assert_equivalent(original: str, fixed: str, function_name: str = "classify"
         assert outcomes[0] == outcomes[1], f"behaviour differs for {original_value!r}: {outcomes}"
 
 
-# ----------------------------------------------------------------------------- detection
+# Detection:
 
 
 def test_literal_chain_with_else_is_fixable(make_project):
@@ -269,7 +269,7 @@ def test_one_computed_body_means_no_dictionary_hint(make_project):
     assert found == [(2, "MAT001", True)]
 
 
-# ----------------------------------------------------------------------------- fixes
+# Fixes:
 
 
 FIX_CASES = {

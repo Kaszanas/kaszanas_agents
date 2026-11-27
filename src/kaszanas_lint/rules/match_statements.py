@@ -127,7 +127,7 @@ class MatchStatementChecker:
     def token_table(self) -> SignificantTokenTable:
         return SignificantTokenTable(source_text=self.source_text)
 
-    # ------------------------------------------------------------------ source helpers
+    # Source helpers:
 
     def segment(self, node: ast.AST) -> str:
         start = self.source_text.offset_from_ast_position(
@@ -144,7 +144,7 @@ class MatchStatementChecker:
     def is_elif(self, node: ast.If) -> bool:
         return self.line_content(line_number=node.lineno)[node.col_offset :].startswith("elif")
 
-    # ------------------------------------------------------------------ chains
+    # Chains:
 
     def run(self) -> list[RuleFinding]:
         if not (self.match_rule_enabled or self.dictionary_rule_enabled):
@@ -246,7 +246,7 @@ class MatchStatementChecker:
             is_fix_certain=is_fix_certain,
         )
 
-    # ------------------------------------------------------------------ tests -> patterns
+    # Tests -> patterns:
 
     @staticmethod
     def subject_key(node: ast.expr) -> str | None:
@@ -428,7 +428,7 @@ class MatchStatementChecker:
             )
         ]
 
-    # ------------------------------------------------------------------ MAT002
+    # MAT002:
 
     def is_dictionary_lookup(self, chain: IfElifChain, analysis: ChainAnalysis) -> bool:
         allowed_kinds = {"literal", "value", "alternatives"}

@@ -13,8 +13,9 @@ else:  # pragma: no cover
     import tomli as tomllib
 
 # Kept in sync with the rule registry by tests/test_rule_documentation.py.
-ALL_RULE_CODES = ("KWA001", "KWA002", "MAT001", "MAT002")
+ALL_RULE_CODES = ("KWA001", "KWA002", "MAT001", "MAT002", "CMT001", "CMT002")
 DEFAULT_MINIMUM_MATCH_BRANCHES = 3
+DEFAULT_MAX_BLANK_LINES_AFTER_HEADING = 0
 
 DEFAULT_EXCLUDED_DIRECTORY_NAMES = frozenset(
     {
@@ -89,6 +90,8 @@ class LintConfiguration:
     inspect_standard_library: bool = True
     cache_enabled: bool = True
     minimum_match_branches: int = DEFAULT_MINIMUM_MATCH_BRANCHES
+    # Blank lines the CMT001 fix keeps between a `# Title:` heading and the code below it.
+    max_blank_lines_after_heading: int = DEFAULT_MAX_BLANK_LINES_AFTER_HEADING
     # Lowest Python version the project supports; None when it can't be determined.
     target_python_version: tuple[int, int] | None = None
 
@@ -220,5 +223,8 @@ def load_configuration(project_root: Path, explicit_config_path: Path | None = N
         safe_decorators=safe_decorators,
         inspect_standard_library=bool(table.get("inspect-stdlib", True)),
         minimum_match_branches=int(table.get("min-match-branches", DEFAULT_MINIMUM_MATCH_BRANCHES)),
+        max_blank_lines_after_heading=int(
+            table.get("max-blank-lines-after-heading", DEFAULT_MAX_BLANK_LINES_AFTER_HEADING)
+        ),
         target_python_version=detect_target_python_version(document=document, table=table),
     )
